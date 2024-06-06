@@ -1,0 +1,287 @@
+const express = require('express')
+const app = express()
+require('dotenv').config()
+const cors = require('cors')
+const cookieParser = require('cookie-parser')
+const { MongoClient, ServerApiVersion,ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken')
+const morgan = require('morgan')
+const port = process.env.PORT || 5000;
+
+
+//middleware
+
+const corsOptions = {
+  origin: ['http://localhost:5173', 'http://localhost:5174'],
+  credentials: true,
+  optionSuccessStatus: 200,
+}
+app.use(cors(corsOptions))
+app.use(express.json())
+app.use(cookieParser())
+app.use(morgan('dev'))
+
+
+ const verifyToken = (req, res, next) => {
+      // console.log('inside verify token', req.headers.authorization);
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: 'unauthorized access' });
+      }
+      const token = req.headers.authorization.split(' ')[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: 'unauthorized access' })
+        }
+        req.decoded = decoded;
+        next();
+      })
+    }
+
+
+const uri = `mongodb+srv://${process.env.DB_USER_TECH}:${process.env.DB_PASS_TECH}@cluster0.2lcaz14.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+async function run() {
+  try {
+    const reviewsCollection = client.db('techTreasure').collection('reviews');
+    const usersCollection = client.db('techTreasure').collection('users');
+    const productsCollection = client.db('techTreasure').collection('products');
+
+
+//verify admin
+  const verifyAdmin = async (req,res,next)=>{
+  const user=req.user;
+  const query={email:user?.email}
+  const result = await usersCollection.findOne(query)
+  if(!result||result?.role!=="admin") return res.status(401).send({message:"unauthorized access"})
+next()
+  }
+//verifyHost middleware
+const verifyModerator = async (req,res,next)=>{
+  const user=req.user;
+  const query={email:user?.email}
+  const result = await usersCollection.findOne(query)
+  if(!result||result?.role!=="moderator") return res.status(401).send({message:"unauthorized access"})
+next()
+  }
+
+    
+//get review for ui
+app.get('/reviews',async(req,res)=>{
+    const result=await reviewsCollection.find().toArray();
+    res.send(result)
+})
+//post a review
+app.post('/review',async(req,res)=>{
+    const review=req.body;
+    const result=await reviewsCollection.insertOne(review);
+    res.send(result)
+})
+    // auth related api
+    app.post('/jwt', async (req, res) => {
+      const user = req.body
+      console.log('I need a new jwt', user)
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '365d',
+      })
+      res
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+        })
+        .send({ success: true })
+    })
+ 
+    // save a user data in db
+    app.put('/user', async (req, res) => {
+      const user = req.body
+      const query = { email: user?.email }
+      // check if user already exists in db
+      const isExist = await usersCollection.findOne(query)
+      if (isExist) {
+        if (user.status === 'Requested') {
+          // if existing user try to change his role
+          const result = await usersCollection.updateOne(query, {
+            $set: { status: user?.status },
+          })
+          return res.send(result)
+        } else {
+          // if existing user login again
+          return res.send(isExist)
+        }
+      }
+
+      // save user for the first time
+      const options = { upsert: true }
+      const updateDoc = {
+        $set: {
+          ...user,
+          timestamp: Date.now(),
+        },
+      }
+      const result = await usersCollection.updateOne(query, updateDoc, options)
+      // welcome new user
+      sendEmail(user?.email, {
+        subject: 'Welcome to Tech Treasure!',
+        message: `Hope you will find your destination`,
+      })
+      res.send(result)
+    })
+
+    // get a user info by email from db
+    app.get('/user/:email', async (req, res) => {
+      const email = req.params.email
+      const result = await usersCollection.findOne({ email })
+      res.send(result)
+    })
+
+    // get all users data from db
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+      const result = await usersCollection.find().toArray()
+      res.send(result)
+    })
+
+    //update a user role
+    app.patch('/users/update/:email', async (req, res) => {
+      const email = req.params.email
+      const user = req.body
+      const query = { email }
+      const updateDoc = {
+        $set: { ...user, timestamp: Date.now() },
+      }
+      const result = await usersCollection.updateOne(query, updateDoc)
+      res.send(result)
+    })
+
+//get review for ui
+app.get('/product',async(req,res)=>{
+    const result=await productsCollection.find().toArray();
+    res.send(result)
+})
+app.post('/product',async(req,res)=>{
+  const product =req.body;
+  const result = await productsCollection.insertOne(product);
+  res.send(result)
+
+})
+//to get data for tabular 
+app.get('/products/:email',async(req,res)=>{
+  const email=req.params.email
+  const query={'productOwner.email':email} 
+  const result=await productsCollection.find(query).toArray()
+  res.send(result);
+
+})
+app.get('/product/:id',async(req,res)=>{
+    const id = req.params.id
+    const query = { _id:new ObjectId(id)}
+    const result = await productsCollection.findOne(query)
+    console.log(result)
+    res.send(result)
+})
+
+
+
+
+//update a product
+app.patch('/product/:id',async(req,res)=>{
+  const productItem=req.body;
+  const id=req.params.id;
+  const query={_id:new ObjectId(id)}
+  const updatedDoc={
+    $set:{
+          // productName:productItem.productName,
+          // productDetails:productItem.productDetails,
+          // tagsItem:productItem.tagsItem,
+          // image:productItem.image,
+          // timestamp:productItem.timestamp
+          ...productItem
+    }
+  }
+  const result=await productsCollection.updateOne(query,updatedDoc);
+  res.send(result);
+})
+//for vote count// Patch endpoint for voting on a product// Patch endpoint for voting on a product
+app.patch('/product/:id/vote', async (req, res) => {
+  const id = req.params.id;
+  const { voteType } = req.body; // Expecting 'upvote', 'downvote', or 'neutral' in the request body
+
+  if (!voteType || !['upvote', 'downvote', 'neutral'].includes(voteType)) {
+    return res.status(400).send({ message: 'Invalid vote type' });
+  }
+
+  const query = { _id: new ObjectId(id) };
+
+  // Fetch current product to determine the current vote state
+  const product = await productsCollection.findOne(query);
+  if (!product) {
+    return res.status(404).send({ message: 'Product not found' });
+  }
+
+  // Logic for updating the vote count
+  let voteIncrement = 0;
+  if (voteType === 'upvote') {
+    voteIncrement = 1;
+  } else if (voteType === 'downvote') {
+    voteIncrement = -1;
+  } else if (voteType === 'neutral') {
+    // If current vote state is upvoted, reset by decrementing the vote
+    if (product.currentVote === 'upvote') {
+      voteIncrement = -1;
+    } else if (product.currentVote === 'downvote') {
+      voteIncrement = 1;
+    }
+  }
+
+  // Update the product vote count and the currentVote state
+  const update = {
+    $inc: { voteCount: voteIncrement },
+    $set: { currentVote: voteType === 'neutral' ? null : voteType }
+  };
+  const result = await productsCollection.updateOne(query, update);
+
+  if (result.modifiedCount > 0) {
+    const updatedProduct = await productsCollection.findOne(query);
+    return res.send({ success: true, voteCount: updatedProduct.voteCount });
+  } else {
+    return res.status(404).send({ message: 'Product not found' });
+  }
+});
+
+
+//delete a product
+app.delete('/product/:id',async(req,res)=>{
+const id=req.params.id;
+const query = {_id:new ObjectId(id)}
+const result=await productsCollection.deleteOne(query)
+res.send(result);
+})
+
+
+
+
+    await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+  } finally {
+  
+  }
+}
+run().catch(console.dir);
+
+
+app.get('/', (req, res) => {
+  res.send('Hello from Tech Treasure')
+})
+
+app.listen(port, () => {
+  console.log(`Tech Treasure is running on port ${port}`)
+})
