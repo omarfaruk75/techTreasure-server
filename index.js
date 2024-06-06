@@ -85,6 +85,23 @@ app.post('/review',async(req,res)=>{
     const result=await reviewsCollection.insertOne(review);
     res.send(result)
 })
+
+// Endpoint to get product details along with its reviews
+app.get('/product-details-with-reviews/:id', async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const product = await productsCollection.findOne(query);
+
+    if (product) {
+        const query = { productName: product.productName };
+        const reviews = await reviewsCollection.find(query).toArray();
+        res.send({ product, reviews });
+    } else {
+        res.status(404).send({ message: 'Product not found' });
+    }
+});
+
+
     // auth related api
     app.post('/jwt', async (req, res) => {
       const user = req.body
@@ -182,6 +199,13 @@ app.get('/products/:email',async(req,res)=>{
 
 })
 app.get('/product/:id',async(req,res)=>{
+    const id = req.params.id
+    const query = { _id:new ObjectId(id)}
+    const result = await productsCollection.findOne(query)
+    console.log(result)
+    res.send(result)
+})
+app.get('/product-details/:id',async(req,res)=>{
     const id = req.params.id
     const query = { _id:new ObjectId(id)}
     const result = await productsCollection.findOne(query)
