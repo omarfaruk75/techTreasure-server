@@ -54,6 +54,7 @@ async function run() {
     const reviewsCollection = client.db('techTreasure').collection('reviews');
     const usersCollection = client.db('techTreasure').collection('users');
     const productsCollection = client.db('techTreasure').collection('products');
+    const reportsCollection = client.db('techTreasure').collection('reports');
 
 
 //verify admin
@@ -190,6 +191,47 @@ app.post('/product',async(req,res)=>{
   res.send(result)
 
 })
+
+//for report post
+app.post('/report/:id', async (req, res) => {
+    const productId = req.params.id;
+
+    try {
+        // Create the report document
+        const report = {
+            productId: new ObjectId(productId),
+            timestamp: new Date(),
+            status: 'reported'
+        };
+
+        // Insert the report into the reports collection
+        const result = await reportsCollection.insertOne(report);
+
+        res.status(201).json({ message: 'Product reported successfully', report });
+    } catch (error) {
+        console.error('Error reporting product:', error);
+        res.status(500).json({ message: 'Failed to report product. Please try again later.' });
+    }
+});
+
+
+app.get('/report-status/:productId', async (req, res) => {
+    const { productId } = req.params;
+
+    try {
+        const report = await reportsCollection.findOne({ productId: new ObjectId(productId) });
+        if (report) {
+            res.status(200).json({ status: report.status });
+        } else {
+            res.status(404).json({ message: 'Report not found' });
+        }
+    } catch (error) {
+        console.error('Error fetching report status:', error);
+        res.status(500).json({ message: 'Failed to fetch report status. Please try again later.' });
+    }
+});
+
+
 //to get data for tabular 
 app.get('/products/:email',async(req,res)=>{
   const email=req.params.email
@@ -212,6 +254,20 @@ app.get('/product-details/:id',async(req,res)=>{
     console.log(result)
     res.send(result)
 })
+
+//report post for a product
+app.post('/report-product', async (req, res) => {
+    const { productId } = req.body;
+    // You can add more information like userId if needed
+    const report = {
+        productId: new ObjectId(productId),
+        timestamp: new Date(),
+        status: 'pending', // Initial status of the report
+    };
+
+    const result = await reportsCollection.insertOne(report);
+    res.send(result);
+});
 
 
 
