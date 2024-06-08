@@ -55,6 +55,7 @@ async function run() {
     const usersCollection = client.db('techTreasure').collection('users');
     const productsCollection = client.db('techTreasure').collection('products');
     const reportsCollection = client.db('techTreasure').collection('reports');
+    const votesCollection = client.db('techTreasure').collection('votes');
 
 
 //verify admin
@@ -120,6 +121,7 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
     })
  
     // save a user data in db
+
     app.put('/user', async (req, res) => {
       const user = req.body
       const query = { email: user?.email }
@@ -147,13 +149,16 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
         },
       }
       const result = await usersCollection.updateOne(query, updateDoc, options)
-      // welcome new user
-      sendEmail(user?.email, {
-        subject: 'Welcome to Tech Treasure!',
-        message: `Hope you will find your destination`,
-      })
+      // // welcome new user
+      // sendEmail(user?.email, {
+      //   subject: 'Welcome to Tech Treasure!',
+      //   message: `Hope you will find your destination`,
+      // })
       res.send(result)
     })
+
+
+  
 
     // get a user info by email from db
     app.get('/user/:email', async (req, res) => {
@@ -163,7 +168,9 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
     })
 
     // get all users data from db
-    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+//app.get('/users', verifyToken, verifyAdmin, async (req, res) => 
+
+    app.get('/users', async (req, res) => {
       const result = await usersCollection.find().toArray()
       res.send(result)
     })
@@ -183,6 +190,7 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
 //get review for ui
 app.get('/product',async(req,res)=>{
     const result=await productsCollection.find().toArray();
+   console.log("Product:", result);
     res.send(result)
 })
 app.post('/product',async(req,res)=>{
@@ -269,7 +277,19 @@ app.post('/report-product', async (req, res) => {
     res.send(result);
 });
 
-
+//update a product status
+app.patch('/product/update/:id',async(req,res)=>{
+  const productItem=req.body;
+  const id=req.params.id;
+  const query={_id:new ObjectId(id)}
+  const updatedDoc={
+    $set:{
+          ...productItem
+    }
+  }
+  const result=await productsCollection.updateOne(query,updatedDoc);
+  res.send(result);
+})
 
 
 //update a product
@@ -290,6 +310,35 @@ app.patch('/product/:id',async(req,res)=>{
   const result=await productsCollection.updateOne(query,updatedDoc);
   res.send(result);
 })
+//vote count api
+app.put('/product-vote/votes/:id', async (req, res) => {
+    const voteType = req.body.voteType;
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = {
+        $inc: {
+            upvotes: voteType === 'upvoted' ? 1 : 0,
+            downvotes: voteType === 'downvoted' ? 1 : 0
+        }
+    };
+
+    try {
+        const result = await votesCollection.updateOne(query, updateDoc);
+        if (result.modifiedCount > 0) {
+            const updatedDocument = await votesCollection.findOne(query);
+            res.send({
+                upvotes: updatedDocument.upvotes,
+                downvotes: updatedDocument.downvotes
+            });
+        } else {
+            res.status(400).send('Failed to update vote');
+        }
+    } catch (error) {
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+
 //for vote count// Patch endpoint for voting on a product// Patch endpoint for voting on a product
 app.patch('/product/:id/vote', async (req, res) => {
   const id = req.params.id;
@@ -338,7 +387,10 @@ app.patch('/product/:id/vote', async (req, res) => {
 });
 
 
+
+
 //delete a product
+
 app.delete('/product/:id',async(req,res)=>{
 const id=req.params.id;
 const query = {_id:new ObjectId(id)}
