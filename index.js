@@ -239,9 +239,19 @@ app.get('/payment/status/:email', async (req, res) => {
         res.status(500).json({ error: "Error fetching products" });
     }
 });
+//pagination of product page
+// app.get('/productsCount',async(req,res)=>{
+//   const count=await productsCollection.estimatedDocumentCount();
+//   res.send({count});
+// })
+app.get('/productsCount', async (req, res) => {
+  const count = await productsCollection.countDocuments({ status: 'Accepted' });
+  res.send({ count });
+});
 
 //get review for ui
 app.get('/product',async(req,res)=>{
+  console.log('pagination query',res.query);
     const result=await productsCollection.find().toArray();
    console.log("Product:", result);
     res.send(result)
