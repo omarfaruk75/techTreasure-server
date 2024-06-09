@@ -3,6 +3,7 @@ const app = express()
 require('dotenv').config()
 const cors = require('cors')
 const cookieParser = require('cookie-parser')
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { MongoClient, ServerApiVersion,ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken')
 const morgan = require('morgan')
@@ -56,6 +57,7 @@ async function run() {
     const productsCollection = client.db('techTreasure').collection('products');
     const reportsCollection = client.db('techTreasure').collection('reports');
     const votesCollection = client.db('techTreasure').collection('votes');
+    const paymentsCollection = client.db("techTreasure").collection("payments");
 
 
 //verify admin
@@ -157,8 +159,36 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
       res.send(result)
     })
 
+//payment intent
 
-  
+ app.post("/create-payment-inten", async (req, res) => {
+  const { price } = req.body;
+  const amount = parseInt(price*100)
+  console.log(amount);
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount:amount,
+    currency:'usd',
+    payment_method_types: ["card" ],
+  })
+    res.send({clientSecret: paymentIntent.client_secret})
+  });
+  //
+  app.post('/payments',async(req,res)=>{
+  const payment=req.body;
+  const paymentsResult= await paymentsCollection.insertOne(payment);
+  //carefully delete each item from the cart
+console.log('payment info', payment);
+
+res.send(paymentsResult)
+})
+
+
+app.get('/payment/status/:email', async (req, res) => {
+    const email = req.params.email;
+    const payment = await paymentsCollection.findOne({ email, status: 'Verified' });
+    res.send({ status: payment ? 'Verified' : 'Not Verified', amount: payment ? payment.price : 200 });
+});
+
 
     // get a user info by email from db
     app.get('/user/:email', async (req, res) => {
@@ -186,6 +216,29 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
       const result = await usersCollection.updateOne(query, updateDoc)
       res.send(result)
     })
+
+    //search product data
+    app.get("/product", async (req, res) => {
+    const search = req.query.search;
+    let query = {};
+
+    if (search) {
+        query = {
+            tagsItem: {
+                $regex: search,
+                $options: 'i'
+            }
+        };
+    }
+
+    try {
+        const result = await productsCollection.find(query).toArray();
+        res.send(result);
+    } catch (error) {
+        console.error("Error fetching Products:", error);
+        res.status(500).json({ error: "Error fetching products" });
+    }
+});
 
 //get review for ui
 app.get('/product',async(req,res)=>{
