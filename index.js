@@ -151,11 +151,6 @@ app.get('/product-details-with-reviews/:id', async (req, res) => {
         },
       }
       const result = await usersCollection.updateOne(query, updateDoc, options)
-      // // welcome new user
-      // sendEmail(user?.email, {
-      //   subject: 'Welcome to Tech Treasure!',
-      //   message: `Hope you will find your destination`,
-      // })
       res.send(result)
     })
 
@@ -239,11 +234,7 @@ app.get('/payment/status/:email', async (req, res) => {
         res.status(500).json({ error: "Error fetching products" });
     }
 });
-//pagination of product page
-// app.get('/productsCount',async(req,res)=>{
-//   const count=await productsCollection.estimatedDocumentCount();
-//   res.send({count});
-// })
+
 app.get('/productsCount', async (req, res) => {
   const count = await productsCollection.countDocuments({ status: 'Accepted' });
   res.send({ count });
@@ -251,10 +242,14 @@ app.get('/productsCount', async (req, res) => {
 
 //get review for ui
 app.get('/product',async(req,res)=>{
-  console.log('pagination query',res.query);
-    const result=await productsCollection.find().toArray();
-   console.log("Product:", result);
-    res.send(result)
+  const page=parseInt(req.query.page);
+  const size=parseInt(req.query.size);
+  console.log(page,size);
+  const result=await productsCollection.find()
+  .skip(page * size)
+  .limit(size)
+  .toArray();
+  res.send(result)
 })
 app.post('/product',async(req,res)=>{
   const product =req.body;
@@ -262,6 +257,20 @@ app.post('/product',async(req,res)=>{
   res.send(result)
 
 })
+
+
+// app.get('/admin-stats',verifyToken,verifyAdmin,async(req,res)=>{
+app.get('/admin-stats',async(req,res)=>{
+  const users=await usersCollection.estimatedDocumentCount();
+  const reviews=await reviewsCollection.estimatedDocumentCount();
+  const products=await productsCollection.estimatedDocumentCount();
+  //this is the not best way
+  // const payments = await paymentsCollection.find().toArray();
+  // const revenue= payments.reduce((total,payment)=>total+payment.price,0)
+  
+  res.send({users,reviews,products});
+})
+
 
 //for report post
 app.post('/report/:id', async (req, res) => {
